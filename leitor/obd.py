@@ -45,13 +45,19 @@ PIDS = {
 }
 
 
+MOTOR, CAMBIO = "7E0", "7E1"
+PARADO = ("P", "N", "P/N")
+
+
 @dataclass(frozen=True)
 class LeituraUds:
-    """Dado próprio da VW lido pelo serviço 22 (ReadDataByIdentifier) na ECU do motor."""
+    """Dado próprio da VW lido pelo serviço 22 (ReadDataByIdentifier) numa central."""
     did: int
     nome: str
     conversao: Callable[[bytes], object]
     a_cada: int = 1  # lida a cada N ciclos de leitura
+    cabecalho: str = MOTOR
+    condicao: Callable[[dict], bool] | None = None  # só é lida quando a condição sobre o contexto é verdadeira
 
     @property
     def comando(self) -> str:
@@ -59,16 +65,46 @@ class LeituraUds:
 
 
 def _marcha(dados: bytes) -> str:
-    """Byte com sinal: -1 = ré, 0 = nenhuma engatada (P ou N, indistinguíveis neste DID), 1..6 = marcha."""
+    """Byte com sinal: -1 = ré, 0 = nenhuma engatada (P ou N), 1..6 = marcha."""
     numero = int.from_bytes(dados[:1], signed=True)
     return {-1: "R", 0: "P/N"}.get(numero, str(numero))
 
 
-# DIDs confirmados no Polo 1.0 TSI capturando o tráfego do Car Scanner; comando -> leitura
+def _estacionado(dados: bytes) -> bool:
+    """00 = alavanca em P; 01 = N, R ou D."""
+    return dados[0] == 0
+
+
+# DIDs confirmados no carro (captura do Car Scanner e varredura de leitura); comando -> leitura.
+# O câmbio vem antes da marcha para o P/N já sair resolvido no mesmo ciclo.
 LEITURAS_UDS = {leitura.comando: leitura for leitura in (
+    LeituraUds(0x104B, "estacionado", _estacionado, a_cada=2, cabecalho=CAMBIO,
+               condicao=lambda contexto: contexto.get("marcha", "P/N") in PARADO),
     LeituraUds(0x14CB, "marcha", _marcha, a_cada=2),
 )}
-MARCHA = LEITURAS_UDS["2214CB"]
+ESTACIONADO, MARCHA = LEITURAS_UDS["22104B"], LEITURAS_UDS["2214CB"]
+
+
+def falta_para_resolver(valores: dict[str, object], contexto: dict[str, object]) -> str | None:
+    """Nome da leitura a fazer na hora para não emitir um valor ambíguo (marcha "P/N" sem a posição do câmbio)."""
+    if valores.get("marcha") == "P/N" and "estacionado" not in contexto and "estacionado" not in valores:
+        return "estacionado"
+    return None
+
+
+def contextualizar(valores: dict[str, object], contexto: dict[str, object]) -> dict[str, object]:
+    """Guarda a leitura no contexto e troca "P/N" por P ou N quando a posição do câmbio é conhecida."""
+    valores = dict(valores)
+    if "estacionado" in valores and contexto.get("marcha") in PARADO:
+        valores.setdefault("marcha", "P/N")
+    if valores.get("marcha") in PARADO:
+        estacionado = valores.get("estacionado", contexto.get("estacionado"))
+        if estacionado is not None:
+            valores["marcha"] = "P" if estacionado else "N"
+    elif "marcha" in valores:
+        contexto.pop("estacionado", None)  # fora de P/N o câmbio não é consultado; o valor antigo envelheceria
+    contexto.update(valores)
+    return valores
 
 ERROS_ELM = ("NO DATA", "CAN ERROR", "STOPPED", "UNABLE TO CONNECT", "BUS ERROR", "BUS BUSY",
              "BUFFER FULL", "DATA ERROR", "FB ERROR", "LV RESET", "ERROR", "?")

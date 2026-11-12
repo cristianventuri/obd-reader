@@ -8,8 +8,8 @@ import pytest
 from leitor import elm327, obd
 from leitor.coleta import Coletor
 from leitor.elm327 import Elm327, ErroAdaptador, comandos_de_configuracao
-from leitor.obd import (LEITURAS_UDS, MARCHA, ComandoProibido, exigir_somente_leitura, ler_resposta, ler_uds,
-                        montar_consultas)
+from leitor.obd import (ESTACIONADO, LEITURAS_UDS, MARCHA, ComandoProibido, contextualizar, exigir_somente_leitura,
+                        ler_resposta, ler_uds, montar_consultas)
 
 VETORES = json.loads((Path(__file__).parent / "vetores.json").read_text())
 
@@ -47,6 +47,77 @@ def test_marcha_a_cada_dois_ciclos_com_contagem():
     coletor._sufixo = "1"
     comandos = [[c.comando for c in coletor._consultas_do_ciclo(ciclo)] for ciclo in (1, 2, 3)]
     assert comandos == [["010C1"], ["010C1", "2214CB1"], ["010C1", "01051"]]
+
+
+def test_contexto_separa_p_de_n_ao_longo_das_trocas():
+    contexto = {}
+    sequencia = [
+        ({"estacionado": True}, {"estacionado": True}),                 # ainda sem marcha conhecida
+        ({"marcha": "P/N"}, {"marcha": "P"}),
+        ({"estacionado": False}, {"estacionado": False, "marcha": "N"}),  # alavanca foi para N
+        ({"marcha": "1"}, {"marcha": "1"}),                               # D: o câmbio deixa de ser lido
+        ({"marcha": "P/N"}, {"marcha": "P/N"}),                           # parou em N/P: espera o câmbio
+        ({"estacionado": False}, {"estacionado": False, "marcha": "N"}),
+        ({"marcha": "R"}, {"marcha": "R"}),
+        ({"marcha": "P/N"}, {"marcha": "P/N"}),
+        ({"estacionado": True}, {"estacionado": True, "marcha": "P"}),
+    ]
+    for leitura, esperado in sequencia:
+        assert contextualizar(leitura, contexto) == esperado
+
+
+def test_cambio_so_e_consultado_parado_e_na_central_certa():
+    coletor = Coletor("00:00:00:00:00:00", "6", "7E0", [0x0C], [], 1, leituras_uds=(ESTACIONADO, MARCHA))
+    parado = [(c.comando, c.cabecalho) for c in coletor._consultas_do_ciclo(2)]
+    assert parado == [("010C", "7E0"), ("22104B", "7E1"), ("2214CB", "7E0")]
+    contextualizar({"marcha": "3"}, coletor._contexto)
+    assert [c.comando for c in coletor._consultas_do_ciclo(2)] == ["010C", "2214CB"]
+
+
+class _ElmQueAnota:
+    conectado = True
+
+    def __init__(self):
+        self.comandos = []
+
+    async def enviar(self, comando, timeout=2.0):
+        self.comandos.append(comando)
+        return ["OK"] if comando.startswith("AT") else ["62" + comando[2:6] + "00"]
+
+
+def test_troca_de_central_so_quando_muda():
+    coletor = Coletor("00:00:00:00:00:00", "6", "7E0", [0x0C], [], 1, leituras_uds=(ESTACIONADO, MARCHA))
+    coletor._cabecalho_atual = "7E0"
+    elm = _ElmQueAnota()
+    for consulta in coletor._consultas_do_ciclo(2)[1:]:
+        asyncio.run(coletor._consultar(elm, consulta))
+    assert elm.comandos == ["ATSH7E1", "22104B", "ATSH7E0", "2214CB"]
+
+
+def _coletor_andando_em_d() -> Coletor:
+    coletor = Coletor("00:00:00:00:00:00", "6", "7E0", [0x0C], [], 1, leituras_uds=(ESTACIONADO, MARCHA))
+    coletor._cabecalho_atual = "7E0"
+    contextualizar({"marcha": "1"}, coletor._contexto)
+    return coletor
+
+
+def test_ao_parar_consulta_o_cambio_na_hora_e_nao_emite_p_n():
+    coletor, elm = _coletor_andando_em_d(), _ElmQueAnota()
+    valores = asyncio.run(coletor._completar(elm, {"marcha": "P/N"}))
+    assert contextualizar(valores, coletor._contexto) == {"marcha": "P", "estacionado": True}
+    assert elm.comandos == ["ATSH7E1", "22104B"]
+
+
+def test_se_o_cambio_nao_responde_emite_p_n():
+    coletor = _coletor_andando_em_d()
+    valores = asyncio.run(coletor._completar(_ElmQueEsgota(), {"marcha": "P/N"}))
+    assert contextualizar(valores, coletor._contexto) == {"marcha": "P/N"}
+
+
+def test_marcha_conhecida_nao_dispara_consulta_extra():
+    coletor, elm = _coletor_andando_em_d(), _ElmQueAnota()
+    assert asyncio.run(coletor._completar(elm, {"marcha": "2"})) == {"marcha": "2"}
+    assert elm.comandos == []
 
 
 class _ElmQueEsgota:

@@ -56,14 +56,16 @@
      "esperado": {"marcha": "3"}},
     {"caso": "resposta negativa", "comando": "2214CB", "linhas": ["7F2231"], "erro": "RespostaInvalida"},
     {"caso": "resposta de outro DID", "comando": "2214CB", "linhas": ["6214CC01"], "erro": "RespostaInvalida"},
-    {"caso": "sem dados", "comando": "2214CB", "linhas": ["NO DATA"], "erro": "SemDados"}
+    {"caso": "sem dados", "comando": "2214CB", "linhas": ["NO DATA"], "erro": "SemDados"},
+    {"caso": "câmbio em P", "comando": "22104B", "linhas": ["62104B00"], "esperado": {"estacionado": true}},
+    {"caso": "câmbio fora de P", "comando": "22104B", "linhas": ["62104B01"], "esperado": {"estacionado": false}}
   ],
   "comandos": {
-    "permitidos": ["2214CB", "2214CB1", "ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP6", "ATSPA", "ATSH7E0", "ATSH7DF",
+    "permitidos": ["2214CB", "2214CB1", "22104B", "22104B1", "ATSH7E1", "ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP6", "ATSPA", "ATSH7E0", "ATSH7DF",
                    "010C", "010C1", "010C0D43440B", "010C0D43440B1", "010C0D43440B05", "010C0D43440B051", "0105", "0170", "0152"],
     "proibidos": ["03", "04", "0101FF", "0902", "1101", "1003", "14FFFFFF", "2EF19000", "3101FF00", "2F010003",
                   "2701", "3E00", "85 02", "ATMA", "ATPP0CSV0A", "ATWS", "ATD", "ATSP6\r04", "0105\r04", "0105\n",
-                  "2214CB11", "2214CB2", "2214CC", "22202F", "22114C", "2214cb", "2E14CB01", "2214CB\r04", "2214CB\n",
+                  "2214CB11", "2214CB2", "22104C", "2E104B00", "2214CC", "22202F", "22114C", "2214cb", "2E14CB01", "2214CB\r04", "2214CB\n",
                   "010c", "0100", "0199", "010C0D43440B050F", "010C0D43440B050F1", "01", "", "ATSH7E0X"]
   }
 }

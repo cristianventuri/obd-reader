@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .coleta import Coletor, Leitura
 from .elm327 import AdaptadorIncompativel, buscar
-from .obd import MARCHA, PIDS, ComandoProibido
+from .obd import ESTACIONADO, MARCHA, PIDS, ComandoProibido
 from .saida import formatar_json, formatar_texto
 
 if TYPE_CHECKING:
@@ -66,7 +66,7 @@ def _argumentos() -> argparse.Namespace:
     parser.add_argument("--lentos", type=_lista_de_pids, default=LENTOS_PADRAO, help="PIDs lidos em rodízio")
     parser.add_argument("--a-cada", type=_inteiro_positivo, default=3, help="ciclos entre blocos de PIDs lentos")
     parser.add_argument("--sem-marcha", action="store_true",
-                        help="não lê a marcha (DID 14CB da VW), ganhando velocidade nos PIDs rápidos")
+                        help="não lê a marcha nem a posição P do câmbio, ganhando velocidade nos PIDs rápidos")
     parser.add_argument("--json", action="store_true", help="uma linha JSON por resposta")
     parser.add_argument("-v", "--verbose", action="store_true", help="mostra comandos e respostas cruas do ELM327")
     parser.add_argument("--painel", action="store_true", help="abre também o painel web com os indicadores")
@@ -139,7 +139,7 @@ def main() -> None:
     try:
         endereco = args.endereco or escolher_dispositivo()
         coletor = Coletor(endereco, args.protocolo, args.cabecalho, args.rapidos, args.lentos, args.a_cada,
-                          leituras_uds=() if args.sem_marcha else (MARCHA,))
+                          leituras_uds=() if args.sem_marcha else (ESTACIONADO, MARCHA))
         asyncio.run(executar(coletor, formatar_json if args.json else formatar_texto, criar_painel(args)))
     except KeyboardInterrupt:
         pass
