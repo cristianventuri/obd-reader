@@ -1,15 +1,20 @@
-"""Linha de comando: escolhe o adaptador, lê o carro e imprime cada resposta no stdout."""
+"""Linha de comando: escolhe o adaptador, lê o carro e imprime cada resposta no stdout (e no painel, se pedido)."""
 import argparse
 import asyncio
-import json
 import logging
 import re
 import signal
 import sys
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from .coleta import Coletor, Leitura
 from .elm327 import AdaptadorIncompativel, buscar
-from .obd import PIDS, ComandoProibido
+from .obd import MARCHA, PIDS, ComandoProibido
+from .saida import formatar_json, formatar_texto
+
+if TYPE_CHECKING:
+    from .painel import Painel
 
 log = logging.getLogger("leitor")
 
@@ -42,6 +47,12 @@ def _inteiro_positivo(texto: str) -> int:
     return int(texto)
 
 
+def _porta(texto: str) -> int:
+    if not texto.isdigit() or not 1 <= int(texto) <= 65535:
+        raise argparse.ArgumentTypeError(f"porta inválida: {texto}")
+    return int(texto)
+
+
 def _argumentos() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="leitor", description="Lê dados OBD-II de um ELM327 BLE (somente leitura).")
     # MAC no Linux/Windows; UUID no macOS
@@ -54,8 +65,14 @@ def _argumentos() -> argparse.Namespace:
     parser.add_argument("--rapidos", type=_lista_de_pids, default=RAPIDOS_PADRAO, help="PIDs lidos em todo ciclo")
     parser.add_argument("--lentos", type=_lista_de_pids, default=LENTOS_PADRAO, help="PIDs lidos em rodízio")
     parser.add_argument("--a-cada", type=_inteiro_positivo, default=3, help="ciclos entre blocos de PIDs lentos")
+    parser.add_argument("--sem-marcha", action="store_true",
+                        help="não lê a marcha (DID 14CB da VW), ganhando velocidade nos PIDs rápidos")
     parser.add_argument("--json", action="store_true", help="uma linha JSON por resposta")
     parser.add_argument("-v", "--verbose", action="store_true", help="mostra comandos e respostas cruas do ELM327")
+    parser.add_argument("--painel", action="store_true", help="abre também o painel web com os indicadores")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="endereço do painel (padrão: só esta máquina; 0.0.0.0 abre para a rede)")
+    parser.add_argument("--porta", type=_porta, default=8080, help="porta do painel (padrão: 8080)")
     return parser.parse_args()
 
 
@@ -82,23 +99,28 @@ def escolher_dispositivo() -> str:
             return endereco
 
 
-def formatar_texto(leitura: Leitura) -> str:
-    valores = " ".join(f"{nome}={_arredondar(valor)}" for nome, valor in leitura.valores.items())
-    return f"{leitura.t:9.3f}  {valores}"
+def criar_painel(args: argparse.Namespace) -> "Painel | None":
+    if not args.painel:
+        return None
+    from .painel import Painel  # só carrega o servidor web quando o painel é pedido
+    return Painel(args.host, args.porta)
 
 
-def formatar_json(leitura: Leitura) -> str:
-    valores = {nome: _arredondar(valor) for nome, valor in leitura.valores.items()}
-    return json.dumps({"t": leitura.t, **valores}, separators=(",", ":"))
-
-
-def _arredondar(valor: object) -> object:
-    return round(valor, 2) if isinstance(valor, float) else valor
-
-
-async def imprimir(coletor: Coletor, formatar) -> None:
-    async for leitura in coletor.ler():
-        print(formatar(leitura), flush=True)
+async def executar(coletor: Coletor, formatar: Callable[[Leitura], str], painel: "Painel | None") -> None:
+    """Imprime cada leitura no stdout e repassa ao painel, se houver."""
+    if painel is not None:
+        try:
+            await painel.iniciar()
+        except OSError as erro:
+            sys.exit(f"não foi possível abrir o painel em {painel.host}:{painel.porta}: {erro.strerror or erro}")
+    try:
+        async for leitura in coletor.ler():
+            print(formatar(leitura), flush=True)
+            if painel is not None:
+                painel.publicar(leitura)
+    finally:
+        if painel is not None:
+            await painel.parar()
 
 
 def _encerrar(*_) -> None:
@@ -110,14 +132,15 @@ def main() -> None:
     logging.basicConfig(stream=sys.stderr, level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("bleak").setLevel(logging.WARNING)
-    # docker stop manda SIGTERM: encerra como no Ctrl+C, desconectando o BLE.
+    # kill/systemd mandam SIGTERM: encerra como no Ctrl+C, desconectando o BLE.
     signal.signal(signal.SIGTERM, _encerrar)
 
     coletor = None
     try:
         endereco = args.endereco or escolher_dispositivo()
-        coletor = Coletor(endereco, args.protocolo, args.cabecalho, args.rapidos, args.lentos, args.a_cada)
-        asyncio.run(imprimir(coletor, formatar_json if args.json else formatar_texto))
+        coletor = Coletor(endereco, args.protocolo, args.cabecalho, args.rapidos, args.lentos, args.a_cada,
+                          leituras_uds=() if args.sem_marcha else (MARCHA,))
+        asyncio.run(executar(coletor, formatar_json if args.json else formatar_texto, criar_painel(args)))
     except KeyboardInterrupt:
         pass
     except ComandoProibido as erro:

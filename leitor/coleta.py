@@ -2,17 +2,18 @@
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from functools import partial
 
 from .elm327 import Elm327, ErroAdaptador
-from .obd import RespostaInvalida, SemDados, ler_resposta, montar_consultas
+from .obd import (CONTAGEM_DE_RESPOSTAS, LeituraUds, RespostaAtrasada, RespostaInvalida, SemDados, ler_resposta,
+                  ler_uds, montar_consultas)
 
 log = logging.getLogger(__name__)
 
 ESPERA_RECONEXAO_S = 3
 ESPERA_SEM_DADOS_S = 1
-CONTAGEM_DE_RESPOSTAS = "1"
 
 
 @dataclass(frozen=True)
@@ -21,11 +22,18 @@ class Leitura:
     valores: dict[str, object]
 
 
-class Coletor:
-    """Lê o carro continuamente: PIDs rápidos a todo ciclo, um bloco de lentos a cada N ciclos."""
+@dataclass(frozen=True)
+class _Consulta:
+    comando: str
+    decodificar: Callable[[list[str]], dict[str, object]]
+    rapida: bool
 
-    def __init__(self, endereco: str, protocolo: str, cabecalho: str | None,
-                 rapidos: list[int], lentos: list[int], lentos_a_cada: int):
+
+class Coletor:
+    """Lê o carro continuamente: rápidos a todo ciclo, cada UDS no seu ritmo, um bloco de lentos a cada N ciclos."""
+
+    def __init__(self, endereco: str, protocolo: str, cabecalho: str | None, rapidos: list[int],
+                 lentos: list[int], lentos_a_cada: int, leituras_uds: tuple[LeituraUds, ...] = ()):
         if not rapidos or lentos_a_cada < 1:
             raise ValueError("é preciso ao menos um PID rápido e lentos_a_cada >= 1")
         self.endereco = endereco
@@ -34,6 +42,7 @@ class Coletor:
         self.lentos_a_cada = lentos_a_cada
         self._rapidas = montar_consultas(rapidos)
         self._lentas = montar_consultas(lentos)
+        self._leituras_uds = leituras_uds
         self._sufixo = ""
         self._sem_dados = False
         self._inicio = time.monotonic()
@@ -85,29 +94,44 @@ class Coletor:
         ciclo = 0
         while elm.conectado:
             ciclo += 1
-            consultas = list(self._rapidas)
-            if self._lentas and ciclo % self.lentos_a_cada == 0:
-                consultas.append(self._lentas[(ciclo // self.lentos_a_cada) % len(self._lentas)])
-            for consulta in consultas:
+            for consulta in self._consultas_do_ciclo(ciclo):
                 valores = await self._consultar(elm, consulta)
                 if valores:
                     self._primeira = self._primeira or time.monotonic()
                     self.total_leituras += 1
                     yield Leitura(round(time.monotonic() - self._inicio, 3), valores)
 
-    async def _consultar(self, elm: Elm327, consulta: str) -> dict[str, object]:
+    def _consultas_do_ciclo(self, ciclo: int) -> list[_Consulta]:
+        consultas = [_Consulta(rapida + self._sufixo, ler_resposta, True) for rapida in self._rapidas]
+        consultas += [_Consulta(uds.comando + self._sufixo, partial(ler_uds, leitura=uds), False)
+                      for uds in self._leituras_uds if ciclo % uds.a_cada == 0]
+        if self._lentas and ciclo % self.lentos_a_cada == 0:
+            lenta = self._lentas[(ciclo // self.lentos_a_cada) % len(self._lentas)]
+            consultas.append(_Consulta(lenta + self._sufixo, ler_resposta, False))
+        return consultas
+
+    async def _consultar(self, elm: Elm327, consulta: _Consulta) -> dict[str, object]:
         """Uma consulta ao carro; sem resposta vira dict vazio."""
         try:
-            valores = ler_resposta(await elm.enviar(consulta + self._sufixo))
+            valores = consulta.decodificar(await elm.enviar(consulta.comando))
         except SemDados as erro:
-            if consulta in self._rapidas:
+            if consulta.rapida:
                 if not self._sem_dados:
                     log.warning("o carro não respondeu (%s); a ignição está ligada?", erro)
                     self._sem_dados = True
                 await asyncio.sleep(ESPERA_SEM_DADOS_S)
             return {}
+        except RespostaAtrasada as erro:
+            log.debug("%s: %s", consulta.comando, erro)
+            return {}
         except RespostaInvalida as erro:
             log.warning("%s", erro)
+            return {}
+        except ErroAdaptador as erro:
+            # Timeout isolado não derruba a conexão; só a queda do BLE leva à reconexão.
+            if not elm.conectado:
+                raise
+            log.warning("%s: %s; seguindo", consulta.comando, erro)
             return {}
         if self._sem_dados:
             log.info("o carro voltou a responder")

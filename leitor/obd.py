@@ -1,5 +1,7 @@
-"""Núcleo OBD-II sem I/O: tabela de PIDs, decodificação do modo 01 e regra de somente leitura."""
+"""Núcleo OBD-II sem I/O: tabelas de PIDs e DIDs, decodificação e regra de somente leitura."""
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 
 MAX_PIDS_POR_CONSULTA = 6
 
@@ -42,15 +44,46 @@ PIDS = {
     0x70: ("turbo", 10, _turbo),
 }
 
+
+@dataclass(frozen=True)
+class LeituraUds:
+    """Dado próprio da VW lido pelo serviço 22 (ReadDataByIdentifier) na ECU do motor."""
+    did: int
+    nome: str
+    conversao: Callable[[bytes], object]
+    a_cada: int = 1  # lida a cada N ciclos de leitura
+
+    @property
+    def comando(self) -> str:
+        return f"22{self.did:04X}"
+
+
+def _marcha(dados: bytes) -> str:
+    """Byte com sinal: -1 = ré, 0 = nenhuma engatada (P ou N, indistinguíveis neste DID), 1..6 = marcha."""
+    numero = int.from_bytes(dados[:1], signed=True)
+    return {-1: "R", 0: "P/N"}.get(numero, str(numero))
+
+
+# DIDs confirmados no Polo 1.0 TSI capturando o tráfego do Car Scanner; comando -> leitura
+LEITURAS_UDS = {leitura.comando: leitura for leitura in (
+    LeituraUds(0x14CB, "marcha", _marcha, a_cada=2),
+)}
+MARCHA = LEITURAS_UDS["2214CB"]
+
 ERROS_ELM = ("NO DATA", "CAN ERROR", "STOPPED", "UNABLE TO CONNECT", "BUS ERROR", "BUS BUSY",
              "BUFFER FULL", "DATA ERROR", "FB ERROR", "LV RESET", "ERROR", "?")
 
 _LINHA_IGNORADA = re.compile(r"(SEARCHING|BUS INIT).*")
+# "7F xx 78" = resposta pendente do UDS; o valor vem depois, na mesma resposta ou atrasado.
+_PENDENTE = re.compile(r"7F[0-9A-F]{2}78")
 _TAMANHO_MULTIQUADRO = re.compile(r"[0-9A-F]{3}")
 _QUADRO = re.compile(r"([0-9A-F]):([0-9A-F]*)")
 
-# Lista do que pode sair para o adaptador; o resto é recusado. O "1" final é a contagem de respostas.
-_CONSULTA_PERMITIDA = re.compile(r"01((?:[0-9A-F]{2}){1,%d})1?" % MAX_PIDS_POR_CONSULTA)
+# Sufixo que faz o ELM327 devolver a resposta assim que a central fala, sem esperar o próprio timeout.
+CONTAGEM_DE_RESPOSTAS = "1"
+
+# Lista do que pode sair para o adaptador; o resto é recusado.
+_CONSULTA_PERMITIDA = re.compile(r"01((?:[0-9A-F]{2}){1,%d})%s?" % (MAX_PIDS_POR_CONSULTA, CONTAGEM_DE_RESPOSTAS))
 _AT_PERMITIDO = re.compile(r"AT(Z|E0|L0|S0|H0|SP[0-9A-C]|SH[0-9A-F]{3})")
 
 
@@ -59,7 +92,11 @@ class SemDados(Exception):
 
 
 class RespostaInvalida(Exception):
-    """A resposta não segue o formato do modo 01."""
+    """A resposta não segue o formato esperado."""
+
+
+class RespostaAtrasada(Exception):
+    """Só veio o "aguarde" (7F xx 78) ou a sobra de um pedido anterior; o valor vem num próximo ciclo."""
 
 
 class ComandoProibido(Exception):
@@ -67,8 +104,9 @@ class ComandoProibido(Exception):
 
 
 def exigir_somente_leitura(comando: str) -> None:
-    """Recusa tudo que não seja configuração do ELM327 ou leitura do modo 01 com PIDs conhecidos."""
-    if _AT_PERMITIDO.fullmatch(comando):
+    """Só deixa passar configuração do ELM327, modo 01 com PIDs conhecidos e as leituras de `LEITURAS_UDS`."""
+    sem_contagem = comando.removesuffix(CONTAGEM_DE_RESPOSTAS)
+    if _AT_PERMITIDO.fullmatch(comando) or comando in LEITURAS_UDS or sem_contagem in LEITURAS_UDS:
         return
     consulta = _CONSULTA_PERMITIDA.fullmatch(comando)
     if consulta and all(int(pid, 16) in PIDS for pid in re.findall("..", consulta.group(1))):
@@ -85,18 +123,30 @@ def montar_consultas(pids: list[int]) -> list[str]:
     return ["01" + "".join(f"{pid:02X}" for pid in bloco) for bloco in blocos]
 
 
-def extrair_bytes(linhas: list[str]) -> bytes:
-    """Junta as linhas de resposta do ELM327 (quadro único ou ISO-TP multiquadro) em bytes."""
-    limpas = []
+def _e_sobra(linha: str, esperado: int) -> bool:
+    """Resposta de quadro único de outro pedido (ex.: um 62 atrasado chegando junto de um 41)."""
+    if _QUADRO.fullmatch(linha) or _TAMANHO_MULTIQUADRO.fullmatch(linha):
+        return False
+    return not linha.startswith((f"{esperado:02X}", "7F"))
+
+
+def extrair_bytes(linhas: list[str], esperado: int | None = None) -> bytes:
+    """Junta as linhas do ELM327 (quadro único ou ISO-TP multiquadro) em bytes; `esperado` descarta sobras."""
+    limpas, descartadas = [], []
     for linha in linhas:
         linha = linha.replace(" ", "").replace(">", "").upper()
         if not linha or _LINHA_IGNORADA.fullmatch(linha):
             continue
         if any(linha.startswith(erro.replace(" ", "")) for erro in ERROS_ELM):
             raise SemDados(linha)
+        if _PENDENTE.fullmatch(linha) or (esperado is not None and _e_sobra(linha, esperado)):
+            descartadas.append(linha)
+            continue
         limpas.append(linha)
 
     if not limpas:
+        if descartadas:
+            raise RespostaAtrasada(f"só veio {descartadas}")
         raise SemDados("resposta vazia")
 
     quadros = [m.group(2) for m in map(_QUADRO.fullmatch, limpas) if m]
@@ -145,4 +195,12 @@ def nomear(valores: dict[int, object]) -> dict[str, object]:
 
 def ler_resposta(linhas: list[str]) -> dict[str, object]:
     """Linhas cruas do ELM327 -> valores nomeados."""
-    return nomear(decodificar_modo01(extrair_bytes(linhas)))
+    return nomear(decodificar_modo01(extrair_bytes(linhas, esperado=0x41)))
+
+
+def ler_uds(linhas: list[str], leitura: LeituraUds) -> dict[str, object]:
+    """Linhas cruas de uma leitura do serviço 22 -> valor nomeado; resposta negativa (7F) é inválida."""
+    dados = extrair_bytes(linhas, esperado=0x62)
+    if len(dados) < 4 or dados[:3] != bytes([0x62, leitura.did >> 8, leitura.did & 0xFF]):
+        raise RespostaInvalida(f"resposta inesperada para {leitura.comando}: {dados.hex()}")
+    return {leitura.nome: leitura.conversao(dados[3:])}

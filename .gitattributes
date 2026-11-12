@@ -1,2 +1,2 @@
-# Fim de linha LF para tudo, mesmo clonando no Windows (o container é Linux)
+# Fim de linha LF para tudo, mesmo clonando no Windows (o iniciar.sh quebra com CRLF)
 * text=auto eol=lf

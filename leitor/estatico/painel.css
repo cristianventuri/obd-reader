@@ -1,0 +1,63 @@
+:root {
+  --fundo: #0d1014;
+  --cartao: #161b22;
+  --borda: #262d36;
+  --texto: #e6edf3;
+  --texto-suave: #8b96a3;
+  --destaque: #3fb68b;
+  --atencao: #e5a03b;
+  --perigo: #e5534b;
+  --raio: 14px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.topo h1 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--texto-suave); }
+
+.status { font-size: .85rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--borda); }
+.status::before { content: "●"; margin-right: 6px; }
+.status[data-estado="ao-vivo"]::before { color: var(--destaque); }
+.status[data-estado="conectando"]::before,
+.status[data-estado="sem-dados"]::before { color: var(--atencao); }
+.status[data-estado="desconectado"]::before { color: var(--perigo); }
+
+main { padding: 0 16px 24px; display: grid; gap: 12px; }
+
+.destaques { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.grade { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
+.cartao {
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 14px 16px;
+  transition: opacity .3s;
+}
+
+.cartao.desatualizado { opacity: .4; }
+.cartao.alerta { border-color: var(--perigo); }
+
+.titulo { margin: 0 0 6px; font-size: .8rem; font-weight: 500; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; }
+.leitura { margin: 0; }
+.valor { font-size: 1.8rem; font-weight: 600; }
+.unidade { font-size: .9rem; color: var(--texto-suave); }
+.destaques .valor { font-size: 3rem; }
+
+.barra { height: 6px; margin-top: 10px; background: var(--borda); border-radius: 3px; overflow: hidden; }
+.preenchimento { height: 100%; width: 0; background: var(--destaque); transition: width .15s linear; }
+.alerta .preenchimento { background: var(--perigo); }

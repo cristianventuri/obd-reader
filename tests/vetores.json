@@ -36,13 +36,34 @@
     {"caso": "ignição desligada", "linhas": ["UNABLE TO CONNECT"], "erro": "SemDados"},
     {"caso": "comando não entendido", "linhas": ["?"], "erro": "SemDados"},
     {"caso": "resposta vazia", "linhas": [], "erro": "SemDados"},
-    {"caso": "resposta negativa de outro modo", "linhas": ["7F0112"], "erro": "RespostaInvalida"}
+    {"caso": "resposta negativa de outro modo", "linhas": ["7F0112"], "erro": "RespostaInvalida"},
+    {"caso": "descarta sobra atrasada da marcha antes da resposta", "linhas": ["6214CB01", "410D50"],
+     "esperado": {"velocidade_kmh": 80}},
+    {"caso": "descarta sobra atrasada no meio do multiquadro",
+     "linhas": ["00E", "6214CB01", "0:410C0F4C0D00", "1:43002F4480000B", "2:24555555555555"],
+     "esperado": {"rpm": 979.0, "velocidade_kmh": 0, "carga_absoluta_pct": 18.43, "lambda_comandado": 1.0, "map_kpa": 36}},
+    {"caso": "só a sobra de outro pedido", "linhas": ["6214CB01"], "erro": "RespostaAtrasada"}
+  ],
+  "respostas_uds": [
+    {"caso": "marcha 1ª", "comando": "2214CB", "linhas": ["6214CB01"], "esperado": {"marcha": "1"}},
+    {"caso": "marcha ré (FF = -1)", "comando": "2214CB", "linhas": ["6214CBFF"], "esperado": {"marcha": "R"}},
+    {"caso": "P ou N", "comando": "2214CB", "linhas": ["62 14 CB 00"], "esperado": {"marcha": "P/N"}},
+    {"caso": "pendente (7F 22 78) seguida da resposta", "comando": "2214CB", "linhas": ["7F2278", "6214CB02"],
+     "esperado": {"marcha": "2"}},
+    {"caso": "só a pendente (contagem encerrou antes do valor)", "comando": "2214CB", "linhas": ["7F2278"],
+     "erro": "RespostaAtrasada"},
+    {"caso": "descarta sobra atrasada do modo 01", "comando": "2214CB", "linhas": ["410D50", "6214CB03"],
+     "esperado": {"marcha": "3"}},
+    {"caso": "resposta negativa", "comando": "2214CB", "linhas": ["7F2231"], "erro": "RespostaInvalida"},
+    {"caso": "resposta de outro DID", "comando": "2214CB", "linhas": ["6214CC01"], "erro": "RespostaInvalida"},
+    {"caso": "sem dados", "comando": "2214CB", "linhas": ["NO DATA"], "erro": "SemDados"}
   ],
   "comandos": {
-    "permitidos": ["ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP6", "ATSPA", "ATSH7E0", "ATSH7DF",
+    "permitidos": ["2214CB", "2214CB1", "ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP6", "ATSPA", "ATSH7E0", "ATSH7DF",
                    "010C", "010C1", "010C0D43440B", "010C0D43440B1", "010C0D43440B05", "010C0D43440B051", "0105", "0170", "0152"],
     "proibidos": ["03", "04", "0101FF", "0902", "1101", "1003", "14FFFFFF", "2EF19000", "3101FF00", "2F010003",
                   "2701", "3E00", "85 02", "ATMA", "ATPP0CSV0A", "ATWS", "ATD", "ATSP6\r04", "0105\r04", "0105\n",
+                  "2214CB11", "2214CB2", "2214CC", "22202F", "22114C", "2214cb", "2E14CB01", "2214CB\r04", "2214CB\n",
                   "010c", "0100", "0199", "010C0D43440B050F", "010C0D43440B050F1", "01", "", "ATSH7E0X"]
   }
 }
