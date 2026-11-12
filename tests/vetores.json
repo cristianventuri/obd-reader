@@ -1,0 +1,48 @@
+{
+  "respostas": [
+    {
+      "caso": "010C0D43440B no Polo em marcha lenta: ISO-TP em três quadros",
+      "linhas": ["00E", "0:410C0F4C0D00", "1:43002F4480000B", "2:24555555555555"],
+      "esperado": {"rpm": 979.0, "velocidade_kmh": 0, "carga_absoluta_pct": 18.43, "lambda_comandado": 1.0, "map_kpa": 36}
+    },
+    {
+      "caso": "quadro único com espaços",
+      "linhas": ["41 52 45"],
+      "esperado": {"etanol_pct": 27.06}
+    },
+    {
+      "caso": "ignora SEARCHING",
+      "linhas": ["SEARCHING...", "410D50"],
+      "esperado": {"velocidade_kmh": 80}
+    },
+    {
+      "caso": "PID desconhecido interrompe sem quebrar",
+      "linhas": ["410D3C99FF"],
+      "esperado": {"velocidade_kmh": 60}
+    },
+    {
+      "caso": "01700E1149043C no Polo em marcha lenta: só a pressão real do turbo A é suportada",
+      "linhas": ["41700200000C8400000000000E7B1121492504183C13AB"],
+      "esperado": {"pressao_turbo_kpa": 100.12, "avanco_graus": -2.5, "borboleta_pct": 12.94, "pedal_pct": 14.51,
+                   "carga_calculada_pct": 9.41, "temp_catalisador_c": 463.5}
+    },
+    {
+      "caso": "diagnóstico espalha luz de injeção e quantidade de códigos",
+      "linhas": ["4101830000002F8D"],
+      "esperado": {"luz_injecao": true, "codigos_falha": 3, "tanque_pct": 55.29}
+    },
+    {"caso": "sem dados", "linhas": ["NO DATA"], "erro": "SemDados"},
+    {"caso": "erro de CAN", "linhas": ["CAN ERROR"], "erro": "SemDados"},
+    {"caso": "ignição desligada", "linhas": ["UNABLE TO CONNECT"], "erro": "SemDados"},
+    {"caso": "comando não entendido", "linhas": ["?"], "erro": "SemDados"},
+    {"caso": "resposta vazia", "linhas": [], "erro": "SemDados"},
+    {"caso": "resposta negativa de outro modo", "linhas": ["7F0112"], "erro": "RespostaInvalida"}
+  ],
+  "comandos": {
+    "permitidos": ["ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP6", "ATSPA", "ATSH7E0", "ATSH7DF",
+                   "010C", "010C1", "010C0D43440B", "010C0D43440B1", "010C0D43440B05", "010C0D43440B051", "0105", "0170", "0152"],
+    "proibidos": ["03", "04", "0101FF", "0902", "1101", "1003", "14FFFFFF", "2EF19000", "3101FF00", "2F010003",
+                  "2701", "3E00", "85 02", "ATMA", "ATPP0CSV0A", "ATWS", "ATD", "ATSP6\r04", "0105\r04", "0105\n",
+                  "010c", "0100", "0199", "010C0D43440B050F", "010C0D43440B050F1", "01", "", "ATSH7E0X"]
+  }
+}

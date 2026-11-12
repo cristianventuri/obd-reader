@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Ferramentas
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Ambiente e editores
+.env
+.vscode/
+.idea/
+.DS_Store
+
+# Leituras gravadas pelo leitor (ex.: --json > leituras.jsonl)
+*.jsonl

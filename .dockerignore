@@ -1,0 +1,16 @@
+.git/
+.gitignore
+.gitattributes
+.editorconfig
+.venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.vscode/
+.idea/
+*.jsonl
+README.md
+docker-compose.yml
+Dockerfile
