@@ -6,12 +6,14 @@ import re
 import signal
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .coleta import Coletor, Leitura
 from .elm327 import AdaptadorIncompativel, buscar
 from .obd import ESTACIONADO, MARCHA, PIDS, ComandoProibido
 from .saida import formatar_json, formatar_texto
+from .simulador import Simulador
 
 if TYPE_CHECKING:
     from .painel import Painel
@@ -20,6 +22,7 @@ log = logging.getLogger("leitor")
 
 RAPIDOS_PADRAO = "0C,0D,43,44,0B"
 LENTOS_PADRAO = "05,0F,46,2F,42,33,70,0E,11,49,04,3C,01,06,07,34,1F,31,52"
+CONFIG_PADRAO = Path(__file__).resolve().parent.parent / "config.json"
 
 
 def _lista_de_pids(texto: str) -> list[int]:
@@ -58,6 +61,8 @@ def _argumentos() -> argparse.Namespace:
     # MAC no Linux/Windows; UUID no macOS
     parser.add_argument("--endereco", type=_formato(r"[0-9A-F]{2}(:[0-9A-F]{2}){5}|[0-9A-F-]{36}", "endereço"),
                         help="endereço BLE do adaptador; sem ele, abre a lista de dispositivos")
+    parser.add_argument("--simulador", action="store_true",
+                        help="lê um trajeto simulado em vez do carro, sem Bluetooth (ignora as opções do adaptador)")
     parser.add_argument("--protocolo", type=_formato(r"[0-9A-C]", "protocolo"), default="6",
                         help="protocolo do ELM327 (padrão: 6 = CAN 11 bits 500k)")
     parser.add_argument("--cabecalho", type=_formato(r"[0-9A-F]{3}", "cabeçalho"), default="7E0",
@@ -73,6 +78,8 @@ def _argumentos() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1",
                         help="endereço do painel (padrão: só esta máquina; 0.0.0.0 abre para a rede)")
     parser.add_argument("--porta", type=_porta, default=8080, help="porta do painel (padrão: 8080)")
+    parser.add_argument("--config", type=Path, default=CONFIG_PADRAO,
+                        help="arquivo com a configuração do painel (padrão: config.json na pasta do projeto)")
     return parser.parse_args()
 
 
@@ -103,10 +110,10 @@ def criar_painel(args: argparse.Namespace) -> "Painel | None":
     if not args.painel:
         return None
     from .painel import Painel  # só carrega o servidor web quando o painel é pedido
-    return Painel(args.host, args.porta)
+    return Painel(args.host, args.porta, args.config)
 
 
-async def executar(coletor: Coletor, formatar: Callable[[Leitura], str], painel: "Painel | None") -> None:
+async def executar(fonte: Coletor | Simulador, formatar: Callable[[Leitura], str], painel: "Painel | None") -> None:
     """Imprime cada leitura no stdout e repassa ao painel, se houver."""
     if painel is not None:
         try:
@@ -114,7 +121,7 @@ async def executar(coletor: Coletor, formatar: Callable[[Leitura], str], painel:
         except OSError as erro:
             sys.exit(f"não foi possível abrir o painel em {painel.host}:{painel.porta}: {erro.strerror or erro}")
     try:
-        async for leitura in coletor.ler():
+        async for leitura in fonte.ler():
             print(formatar(leitura), flush=True)
             if painel is not None:
                 painel.publicar(leitura)
@@ -135,12 +142,15 @@ def main() -> None:
     # kill/systemd mandam SIGTERM: encerra como no Ctrl+C, desconectando o BLE.
     signal.signal(signal.SIGTERM, _encerrar)
 
-    coletor = None
+    fonte: Coletor | Simulador | None = None
     try:
-        endereco = args.endereco or escolher_dispositivo()
-        coletor = Coletor(endereco, args.protocolo, args.cabecalho, args.rapidos, args.lentos, args.a_cada,
-                          leituras_uds=() if args.sem_marcha else (ESTACIONADO, MARCHA))
-        asyncio.run(executar(coletor, formatar_json if args.json else formatar_texto, criar_painel(args)))
+        if args.simulador:
+            fonte = Simulador()
+        else:
+            endereco = args.endereco or escolher_dispositivo()
+            fonte = Coletor(endereco, args.protocolo, args.cabecalho, args.rapidos, args.lentos, args.a_cada,
+                            leituras_uds=() if args.sem_marcha else (ESTACIONADO, MARCHA))
+        asyncio.run(executar(fonte, formatar_json if args.json else formatar_texto, criar_painel(args)))
     except KeyboardInterrupt:
         pass
     except ComandoProibido as erro:
@@ -148,9 +158,9 @@ def main() -> None:
     except AdaptadorIncompativel as erro:
         sys.exit(str(erro))
     finally:
-        if coletor is not None:
-            log.info("%d leituras (%.1f/s), contagem de respostas %s", coletor.total_leituras, coletor.taxa,
-                     "ativa" if coletor.contagem_ativa else "desligada")
+        if isinstance(fonte, Coletor):
+            log.info("%d leituras (%.1f/s), contagem de respostas %s", fonte.total_leituras, fonte.taxa,
+                     "ativa" if fonte.contagem_ativa else "desligada")
 
 
 if __name__ == "__main__":

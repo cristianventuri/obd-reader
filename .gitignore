@@ -21,3 +21,6 @@ htmlcov/
 
 # Leituras gravadas pelo leitor (ex.: --json > leituras.jsonl)
 *.jsonl
+
+# Configuração do painel, própria de cada carro (criada pela tela de configurações)
+config.json

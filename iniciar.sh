@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Inicia o leitor.  ./iniciar.sh            -> só o terminal
-#                   ./iniciar.sh --painel   -> terminal + painel web em http://localhost:8080
+# Inicia o leitor.  ./iniciar.sh                        -> só o terminal
+#                   ./iniciar.sh --painel               -> terminal + painel web em http://localhost:8080
+#                   ./iniciar.sh --simulador --painel   -> o mesmo com dados simulados, sem carro
 set -euo pipefail
 cd "$(dirname "$0")"
 if [ ! -x .venv/bin/python ]; then

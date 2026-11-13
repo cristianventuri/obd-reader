@@ -1,80 +1,66 @@
-// Indicadores exibidos: chave = nome do valor na leitura. "maximo" desenha a barra; "alerta" destaca o cartão.
-const INDICADORES = [
-  { chave: "velocidade_kmh", titulo: "Velocidade", unidade: "km/h", destaque: true },
-  { chave: "rpm", titulo: "Rotação", unidade: "rpm", destaque: true, maximo: 7000, alerta: (v) => v > 6000 },
-  { chave: "marcha", titulo: "Marcha", destaque: true },
-  { chave: "temp_motor_c", titulo: "Motor", unidade: "°C", maximo: 130, alerta: (v) => v > 110 },
-  { chave: "pressao_turbo_kpa", titulo: "Turbo", unidade: "kPa", maximo: 250 },
-  { chave: "carga_absoluta_pct", titulo: "Carga", unidade: "%", maximo: 150 },
-  { chave: "pedal_pct", titulo: "Pedal", unidade: "%", maximo: 100 },
-  { chave: "tanque_pct", titulo: "Tanque", unidade: "%", maximo: 100, alerta: (v) => v < 10 },
-  { chave: "tensao_v", titulo: "Bateria", unidade: "V", casas: 1, alerta: (v) => v < 11.8 },
-  { chave: "temp_ar_c", titulo: "Ar admitido", unidade: "°C" },
-  { chave: "etanol_pct", titulo: "Etanol", unidade: "%" },
-  { chave: "luz_injecao", titulo: "Injeção", formatar: (v) => (v ? "acesa" : "ok"), alerta: (v) => v },
-];
+import { Indicador, definicoesDaConfig } from "./indicadores.js";
+import { Navegacao } from "./navegacao.js";
 
-// Sem atualização por esse tempo, o cartão esmaece; sem nenhuma mensagem, o status avisa.
+// Sem atualização por esse tempo, o mostrador esmaece; sem nenhuma mensagem, o status avisa.
 const DESATUALIZADO_MS = 10000;
 const SEM_DADOS_MS = 5000;
 
-const cartoes = new Map();
 const statusEl = document.getElementById("status");
+const container = document.getElementById("mostradores");
+// Segurar o dedo num mostrador abre as configurações; sozinho (tela redonda), abre o primeiro ajuste sozinho.
+const navegacao = new Navegacao(container, "mostrador", {
+  aoSegurar: (unico) => location.assign(unico ? "/config?ajuste=velocidade-maximo" : "/config"),
+});
+let indicadores = [];
+// Último valor de cada dado e quando chegou; cada leitura do carro traz só parte deles.
+const estado = {};
+const atualizadoEm = {};
 let ultimaMensagem = 0;
 let conectado = false;
+let desenhoAgendado = false;
 
-function montarCartoes() {
-  const modelo = document.getElementById("modelo-cartao");
-  for (const indicador of INDICADORES) {
-    const elemento = modelo.content.firstElementChild.cloneNode(true);
-    elemento.querySelector(".titulo").textContent = indicador.titulo;
-    elemento.querySelector(".unidade").textContent = indicador.unidade ?? "";
-    const barra = elemento.querySelector(".barra");
-    barra.hidden = indicador.maximo === undefined;
-    document.getElementById(indicador.destaque ? "destaques" : "grade").append(elemento);
-    cartoes.set(indicador.chave, {
-      indicador,
-      elemento,
-      valor: elemento.querySelector(".valor"),
-      preenchimento: elemento.querySelector(".preenchimento"),
-      atualizadoEm: 0,
-    });
+function definirStatus(situacao, texto) {
+  statusEl.dataset.estado = situacao;
+  statusEl.textContent = texto;
+}
+
+// Escalas, faixas e quais mostradores aparecem vêm da configuração: a cada mudança, remonta tudo.
+function aplicarConfig(config) {
+  container.replaceChildren();
+  indicadores = definicoesDaConfig(config).map((definicao) => new Indicador(definicao, container));
+  navegacao.definirItens(indicadores);
+  const agora = Date.now();
+  for (const indicador of indicadores) {
+    indicador.atualizar(estado);
+    indicador.vigiar(atualizadoEm, agora, DESATUALIZADO_MS);
   }
 }
 
-function formatar(indicador, valor) {
-  if (indicador.formatar) return indicador.formatar(valor);
-  if (typeof valor !== "number") return String(valor);
-  return valor.toLocaleString("pt-BR", { maximumFractionDigits: indicador.casas ?? 0 });
+// Várias leituras podem chegar entre dois quadros da tela: desenha uma vez só, com o estado mais novo.
+function agendarDesenho() {
+  if (desenhoAgendado) return;
+  desenhoAgendado = true;
+  requestAnimationFrame(() => {
+    desenhoAgendado = false;
+    for (const indicador of indicadores) indicador.atualizar(estado);
+  });
 }
 
-function atualizar(dados) {
+function receber(dados) {
   const agora = Date.now();
   for (const [chave, valor] of Object.entries(dados)) {
-    const cartao = cartoes.get(chave);
-    if (!cartao || valor === null || valor === undefined) continue;
-    const { indicador, elemento } = cartao;
-    cartao.valor.textContent = formatar(indicador, valor);
-    if (indicador.maximo !== undefined) {
-      const proporcao = Math.min(Math.max(valor / indicador.maximo, 0), 1);
-      cartao.preenchimento.style.width = `${proporcao * 100}%`;
-    }
-    elemento.classList.toggle("alerta", Boolean(indicador.alerta?.(valor)));
-    elemento.classList.remove("desatualizado");
-    cartao.atualizadoEm = agora;
+    // null também vale: o km/l some ao parar, e o carro manda null no que não informa
+    estado[chave] = valor;
+    atualizadoEm[chave] = agora;
   }
-}
-
-function definirStatus(estado, texto) {
-  statusEl.dataset.estado = estado;
-  statusEl.textContent = texto;
+  ultimaMensagem = agora;
+  definirStatus("ao-vivo", "ao vivo");
+  agendarDesenho();
 }
 
 function vigiar() {
   const agora = Date.now();
-  for (const cartao of cartoes.values()) {
-    cartao.elemento.classList.toggle("desatualizado", agora - cartao.atualizadoEm > DESATUALIZADO_MS);
-  }
+  for (const indicador of indicadores) indicador.vigiar(atualizadoEm, agora, DESATUALIZADO_MS);
   if (!conectado) return;
   if (agora - ultimaMensagem > SEM_DADOS_MS) definirStatus("sem-dados", "sem dados do carro");
   else definirStatus("ao-vivo", "ao vivo");
@@ -91,15 +77,13 @@ function conectar() {
     conectado = false;
     definirStatus("desconectado", "leitor desconectado, tentando de novo…");
   };
+  // a configuração chega ao conectar e de novo sempre que alguém a muda (de qualquer aparelho)
+  fonte.addEventListener("config", (evento) => aplicarConfig(JSON.parse(evento.data)));
   fonte.onmessage = (evento) => {
     const dados = JSON.parse(evento.data);
-    if (Object.keys(dados).length === 0) return;
-    ultimaMensagem = Date.now();
-    definirStatus("ao-vivo", "ao vivo");
-    atualizar(dados);
+    if (Object.keys(dados).length > 0) receber(dados);
   };
 }
 
-montarCartoes();
 conectar();
 setInterval(vigiar, 1000);

@@ -1,63 +1,272 @@
+/* Barlow Semi Condensed (licença OFL, fontes/OFL.txt): embutida para funcionar sem internet no carro.
+   Os algarismos têm a mesma largura, então o número não balança quando o valor muda. */
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  font-weight: 300;
+  src: url(fontes/barlow-semi-condensed-300.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  font-weight: 400;
+  src: url(fontes/barlow-semi-condensed-400.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Barlow Semi Condensed";
+  font-weight: 600;
+  src: url(fontes/barlow-semi-condensed-600.woff2) format("woff2");
+}
+
+/* Feito para AMOLED: preto puro é pixel apagado (contraste máximo, menos consumo e menos marca na tela). */
 :root {
-  --fundo: #0d1014;
-  --cartao: #161b22;
-  --borda: #262d36;
-  --texto: #e6edf3;
-  --texto-suave: #8b96a3;
-  --destaque: #3fb68b;
-  --atencao: #e5a03b;
-  --perigo: #e5534b;
-  --raio: 14px;
+  --fundo: #000;
+  --linha: rgba(255, 255, 255, .08);
+  --linha-forte: rgba(255, 255, 255, .16);
+  --texto: #eef1f6;
+  --texto-2: #9aa3b5;
+  --texto-3: #5d6678;
+  --destaque: #3987e5;
+  --frio: #38bdf8;
+  --bom: #2fbf71;
+  --atencao: #fab219;
+  --perigo: #e5484d;
+  --tamanho: 422px; /* tela redonda de 1,75" */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
+  min-height: 100dvh;
   background: var(--fundo);
   color: var(--texto);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Barlow Semi Condensed", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .topo {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
+  gap: 12px;
+  padding: max(16px, env(safe-area-inset-top)) 16px 16px;
 }
 
-.topo h1 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--texto-suave); }
+.topo h1 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--texto-2); }
 
-.status { font-size: .85rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--borda); }
+.status {
+  font-size: .85rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--linha-forte);
+  white-space: nowrap;
+}
 .status::before { content: "●"; margin-right: 6px; }
-.status[data-estado="ao-vivo"]::before { color: var(--destaque); }
+.status[data-estado="ao-vivo"]::before { color: var(--bom); }
 .status[data-estado="conectando"]::before,
 .status[data-estado="sem-dados"]::before { color: var(--atencao); }
 .status[data-estado="desconectado"]::before { color: var(--perigo); }
 
-main { padding: 0 16px 24px; display: grid; gap: 12px; }
+.acoes { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.botao-topo {
+  font-size: .85rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--linha-forte);
+  color: var(--texto-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.botao-topo:hover { color: var(--texto); }
+.botao-topo:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
 
-.destaques { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.grade { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
-
-.cartao {
-  background: var(--cartao);
-  border: 1px solid var(--borda);
-  border-radius: var(--raio);
-  padding: 14px 16px;
-  transition: opacity .3s;
+/* --- grade: cada mostrador no tamanho da tela redonda, encolhendo só quando a janela é mais estreita --- */
+.mostradores {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 28px;
+  padding: 0 16px max(32px, env(safe-area-inset-bottom));
 }
 
-.cartao.desatualizado { opacity: .4; }
-.cartao.alerta { border-color: var(--perigo); }
+.mostrador {
+  flex: 0 1 var(--tamanho);
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  font: inherit; /* botão não herda a fonte da página por padrão */
+  cursor: pointer;
+  transition: opacity .3s;
+}
+.mostrador:focus-visible { outline: 2px solid var(--destaque); outline-offset: 4px; }
+.mostrador.desatualizado { opacity: .35; }
+.mostrador svg { display: block; width: 100%; height: 100%; }
+svg text { pointer-events: none; }
 
-.titulo { margin: 0 0 6px; font-size: .8rem; font-weight: 500; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; }
-.leitura { margin: 0; }
-.valor { font-size: 1.8rem; font-weight: 600; }
-.unidade { font-size: .9rem; color: var(--texto-suave); }
-.destaques .valor { font-size: 3rem; }
+/* --- um mostrador só ocupando a tela (é o que roda na tela redonda) --- */
+body.unico { overflow: hidden; }
+body.unico .topo { display: none; }
+body.unico .mostradores { height: 100dvh; padding: 0; align-items: center; }
+body.unico .mostrador:not(.ativo) { display: none; }
+body.unico .mostrador.ativo { flex: none; width: min(100vw, 100dvh); outline: none; }
 
-.barra { height: 6px; margin-top: 10px; background: var(--borda); border-radius: 3px; overflow: hidden; }
-.preenchimento { height: 100%; width: 0; background: var(--destaque); transition: width .15s linear; }
-.alerta .preenchimento { background: var(--perigo); }
+/* --- desenho do mostrador --- */
+/* --cor pinta arco, leitura e nome (só muda nas faixas de limite); --tinta marca o nível (frio, atenção,
+   perigo) na faixa da escala e nos números dela, sem mexer no fundo */
+.redondo { --cor: var(--destaque); --tinta: var(--destaque); }
+.redondo[data-nivel="frio"] { --tinta: var(--frio); }
+.redondo[data-nivel="atencao"] { --cor: var(--atencao); --tinta: var(--atencao); }
+.redondo[data-nivel="perigo"] { --cor: var(--perigo); --tinta: var(--perigo); }
+
+.redondo .face { fill: var(--fundo); }
+.redondo .aro { fill: none; stroke: var(--linha-forte); stroke-width: 1.5; transition: stroke .3s; }
+
+/* dentro de uma faixa de limite, a borda brilha e pulsa na cor dela: devagar na atenção, um pouco mais no perigo */
+.redondo .halo { fill: none; stroke: var(--cor); stroke-width: 5; opacity: 0; transition: opacity .3s; }
+.redondo[data-nivel="atencao"] .halo { animation: pulsar 1.8s ease-in-out infinite; }
+.redondo[data-nivel="perigo"] .halo { animation: pulsar 1.1s ease-in-out infinite; }
+.redondo:is([data-nivel="atencao"], [data-nivel="perigo"]) .aro {
+  stroke: color-mix(in srgb, var(--cor) 55%, transparent);
+}
+@keyframes pulsar {
+  0%, 100% { opacity: .12; }
+  50% { opacity: .6; }
+}
+
+.redondo .zona { fill: none; stroke-width: 4; stroke-linecap: round; }
+.redondo .zona.atencao { stroke: var(--atencao); }
+.redondo .zona.perigo { stroke: var(--perigo); }
+.redondo .trilho { fill: none; stroke: rgba(255, 255, 255, .04); stroke-width: 16; transition: stroke .4s; }
+.redondo:is([data-nivel="frio"], [data-nivel="atencao"], [data-nivel="perigo"]) .trilho {
+  stroke: color-mix(in srgb, var(--tinta) 16%, transparent);
+}
+.redondo .rastro {
+  fill: none;
+  stroke: var(--cor);
+  stroke-width: 16;
+  opacity: .34;
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray .2s linear, stroke-dashoffset .2s linear, stroke .3s;
+}
+/* três níveis: principais (com número), as do meio um pouco destacadas e as marquinhas da micro-escala */
+.redondo .marca { stroke: rgba(255, 255, 255, .5); stroke-width: 2; stroke-linecap: round; }
+.redondo .marca.maior { stroke: rgba(255, 255, 255, .85); stroke-width: 3; }
+.redondo .marca.micro { stroke: rgba(255, 255, 255, .3); stroke-width: 1.3; }
+.redondo .numero-escala { fill: var(--texto-2); font-size: 22px; font-weight: 400; transition: fill .4s; }
+/* intercalados: os principais um pouco menores e os do meio pequenos e apagados (tamanhos de NUMERO em mostrador.js) */
+.redondo.intercalado .numero-escala { font-size: 20px; }
+.redondo .numero-escala.menor { font-size: 15px; fill: var(--texto-3); }
+.redondo:is([data-nivel="frio"], [data-nivel="atencao"], [data-nivel="perigo"]) .numero-escala {
+  fill: color-mix(in srgb, var(--tinta) 80%, var(--texto-2));
+}
+
+/* gira em torno do centro do viewBox (211, 211) */
+.redondo .agulha {
+  transform-box: view-box;
+  transform-origin: 211px 211px;
+  transform: rotate(135deg);
+  transition: transform .2s linear;
+}
+.redondo .agulha-ponteiro { fill: #f4f6fa; stroke: #f4f6fa; stroke-width: .6; stroke-linejoin: round; }
+.redondo .agulha-brilho { fill: var(--cor); stroke: var(--cor); stroke-width: 1.8; transition: fill .3s, stroke .3s; }
+
+/* textos ajustados ao espaço recebem o tamanho pelo atributo font-size: aqui não se define font-size */
+.redondo text { text-anchor: middle; dominant-baseline: central; }
+.redondo .legenda { fill: var(--cor); font-weight: 600; letter-spacing: .22em; transition: fill .3s; }
+/* o número fica livre e centralizado; a unidade vai numa etiqueta pequena embaixo dele */
+.redondo .valor { fill: var(--texto); font-weight: 300; transition: fill .3s; }
+.redondo:is([data-nivel="atencao"], [data-nivel="perigo"]) .valor { fill: var(--cor); }
+.redondo .etiqueta { fill: var(--texto-3); font-weight: 600; letter-spacing: .2em; }
+
+/* complementos: um container por dado importante, embaixo da leitura */
+.complemento rect { fill: rgba(255, 255, 255, .05); stroke: rgba(255, 255, 255, .1); stroke-width: 1; }
+.redondo .complemento-rotulo { text-anchor: start; fill: var(--texto-3); font-weight: 600; letter-spacing: .12em; }
+.redondo .complemento-valor { text-anchor: end; fill: var(--texto); font-weight: 400; }
+
+/* --- miolo: dado complementar no centro, com nível e cor próprios --- */
+.miolo { --cor: var(--destaque); }
+.miolo[data-nivel="bom"] { --cor: var(--bom); }
+.miolo[data-nivel="atencao"] { --cor: var(--atencao); }
+.miolo[data-nivel="perigo"] { --cor: var(--perigo); }
+.miolo-fundo { fill: url(#obd-miolo); stroke: rgba(255, 255, 255, .07); stroke-width: 1; transition: stroke .4s; }
+/* passou do limite (ou marcha em P, R ou N): o fundo do miolo reflete de leve a cor */
+.miolo-tinta { fill: var(--cor); opacity: 0; transition: opacity .4s, fill .4s; }
+.miolo:is([data-nivel="atencao"], [data-nivel="perigo"], [data-posicao="P"], [data-posicao="R"], [data-posicao="N"])
+  .miolo-tinta { opacity: .14; }
+.miolo:is([data-nivel="atencao"], [data-nivel="perigo"], [data-posicao="P"], [data-posicao="R"], [data-posicao="N"])
+  .miolo-fundo { stroke: color-mix(in srgb, var(--cor) 45%, transparent); }
+.anel-trilho, .anel { fill: none; stroke-width: 4; }
+.anel-trilho { stroke: rgba(255, 255, 255, .08); }
+.anel {
+  stroke: var(--cor);
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray .3s linear, stroke-dashoffset .3s linear, stroke .3s;
+}
+.miolo-valor { fill: var(--texto); font-weight: 400; transition: fill .3s; }
+.miolo:is([data-nivel="atencao"], [data-nivel="perigo"]) .miolo-valor { fill: var(--cor); }
+.miolo-rotulo { fill: var(--texto-2); font-weight: 600; letter-spacing: .1em; }
+
+/* marcha: número grande, alavanca P R N D com a posição atual preenchida e um degrau por marcha no anel.
+   P em vermelho, R em âmbar, N em verde; D segue a cor de destaque. */
+.miolo[data-posicao="P"] { --cor: var(--perigo); }
+.miolo[data-posicao="R"] { --cor: var(--atencao); }
+.miolo[data-posicao="N"] { --cor: var(--bom); }
+.marcha { fill: var(--texto); font-weight: 400; }
+.miolo:is([data-posicao="P"], [data-posicao="R"], [data-posicao="N"]) .marcha { fill: var(--cor); }
+.seletor rect { fill: transparent; transition: fill .2s; }
+.seletor text { fill: var(--texto-3); font-size: 13px; font-weight: 700; transition: fill .2s; }
+.seletor.ativa rect { fill: var(--cor); }
+.seletor.ativa text { fill: #000; }
+.degrau {
+  fill: none;
+  stroke: rgba(255, 255, 255, .08);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke .2s;
+}
+.degrau.passado { stroke: color-mix(in srgb, var(--cor) 40%, transparent); }
+.degrau.ativo { stroke: var(--cor); }
+
+/* --- ajustes da configuração, no mesmo formato redondo --- */
+.ajuste .ajuste-nome { fill: var(--texto-2); font-weight: 400; }
+.ajuste .ajuste-status { fill: var(--bom); font-weight: 600; letter-spacing: .06em; }
+.ajuste .ajuste-status.erro { fill: var(--perigo); }
+.ajuste .opcao { stroke-width: 16; stroke-linecap: butt; }
+.botao, .linha { cursor: pointer; outline: none; }
+.botao circle {
+  fill: rgba(255, 255, 255, .05);
+  stroke: rgba(255, 255, 255, .18);
+  stroke-width: 1.5;
+  transition: fill .15s, stroke .15s;
+}
+.botao text { fill: var(--texto); font-size: 34px; font-weight: 300; }
+.botao:is(:hover, :focus-visible) circle { stroke: var(--destaque); stroke-width: 2.5; }
+.botao:active circle { fill: color-mix(in srgb, var(--destaque) 30%, transparent); }
+.botao.desabilitado { opacity: .3; cursor: default; }
+.linha .linha-fundo {
+  fill: rgba(255, 255, 255, .04);
+  stroke: rgba(255, 255, 255, .1);
+  transition: fill .2s, stroke .2s;
+}
+.linha.ligado .linha-fundo {
+  fill: color-mix(in srgb, var(--destaque) 14%, transparent);
+  stroke: color-mix(in srgb, var(--destaque) 55%, transparent);
+}
+.linha:focus-visible .linha-fundo { stroke: var(--destaque); stroke-width: 2; }
+.redondo .linha-nome { text-anchor: start; fill: var(--texto-2); font-weight: 400; }
+.redondo .linha.ligado .linha-nome { fill: var(--texto); }
+.chave { fill: rgba(255, 255, 255, .14); transition: fill .2s; }
+.linha.ligado .chave { fill: var(--destaque); }
+.chave-botao { fill: #fff; transition: cx .2s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .redondo:is([data-nivel="atencao"], [data-nivel="perigo"]) .halo { animation: none; opacity: .35; }
+  .redondo .agulha, .redondo .rastro, .anel { transition: none; }
+}

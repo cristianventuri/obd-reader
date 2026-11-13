@@ -2,26 +2,21 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
   <title>Painel OBD</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/estatico/painel.css">
 </head>
 <body>
   <header class="topo">
     <h1>Painel OBD</h1>
-    <span id="status" class="status" data-estado="conectando">conectando…</span>
+    <div class="acoes">
+      <span id="status" class="status" data-estado="conectando">conectando…</span>
+      <a class="botao-topo" href="/config">Configurações</a>
+    </div>
   </header>
-  <main>
-    <section id="destaques" class="destaques" aria-label="Indicadores principais"></section>
-    <section id="grade" class="grade" aria-label="Demais indicadores"></section>
-  </main>
-  <template id="modelo-cartao">
-    <article class="cartao desatualizado">
-      <h2 class="titulo"></h2>
-      <p class="leitura"><span class="valor">–</span> <span class="unidade"></span></p>
-      <div class="barra" hidden><div class="preenchimento"></div></div>
-    </article>
-  </template>
-  <script src="/estatico/painel.js"></script>
+  <main id="mostradores" class="mostradores" aria-label="Indicadores"></main>
+  <script type="module" src="/estatico/painel.js"></script>
 </body>
 </html>
